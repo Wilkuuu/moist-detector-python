@@ -9,3 +9,4 @@
 
 # Note: MicroPython on ESP32 includes these modules by default
 # No pip install needed - just flash the firmware and upload the code
+

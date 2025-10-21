@@ -12,3 +12,4 @@ gc.collect()
 
 print("ESP32 booted successfully!")
 print("Ready to run main.py...")
+

@@ -1,17 +1,20 @@
-# ESP32 MicroPython ntfy.sh Notification Sender
+# ESP32 MicroPython Moisture Monitor
 
-This project demonstrates how to connect an ESP32 to WiFi and send notifications using ntfy.sh service.
+This project demonstrates how to use an ESP32 with a moisture sensor to continuously monitor soil moisture levels and optionally send notifications via ntfy.sh service.
 
 ## Features
 
 - Connects to WiFi network automatically
-- Sends HTTP POST request to ntfy.sh
+- Continuous moisture monitoring every 5 seconds
+- Optional notifications via ntfy.sh
 - Error handling and status reporting
-- Simple and lightweight code
+- No deep sleep - perfect for testing
+- Timestamp logging for each reading
 
 ## Hardware Requirements
 
 - ESP32 development board
+- Moisture sensor (connected to GPIO34)
 - USB cable for programming and power
 - Computer with Python and esptool installed
 
@@ -19,34 +22,41 @@ This project demonstrates how to connect an ESP32 to WiFi and send notifications
 
 - MicroPython firmware for ESP32
 - esptool for flashing firmware
-- ampy or similar tool for file transfer
+- rshell for file transfer and REPL access
 
 ## Setup Instructions
 
 ### 1. Flash MicroPython Firmware
 
-Download the latest MicroPython firmware for ESP32 from [micropython.org](https://micropython.org/download/esp32/)
+The project includes a pre-downloaded MicroPython firmware file (`esp32-firmware.bin`).
 
-Flash the firmware using esptool:
+**Important**: Use the esptool from the virtual environment to avoid compatibility issues:
+
 ```bash
-esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 460800 write_flash -z 0x1000 esp32-20240105-v1.22.1.bin
+cd /home/wilk/Desktop/Projects/moist-detector-python
+source venv/bin/activate
+./venv/bin/esptool.py --chip esp32 --port /dev/ttyACM0 --baud 460800 write-flash -z 0x1000 esp32-firmware.bin
 ```
 
-Replace `/dev/ttyUSB0` with your ESP32's port and `esp32-20240105-v1.22.1.bin` with your firmware file.
+**Note**: 
+- Replace `/dev/ttyACM0` with your ESP32's actual port (check with `ls /dev/tty*`)
+- The `write-flash` command (with hyphen) is the modern syntax
+- If flashing fails, try putting the ESP32 in bootloader mode (hold BOOT button, press RESET, release BOOT)
 
 ### 2. Upload Code to ESP32
 
-Using ampy:
+Using rshell (recommended):
 ```bash
-ampy --port /dev/ttyUSB0 put boot.py
-ampy --port /dev/ttyUSB0 put main.py
+rshell --port /dev/ttyACM0
+# Then inside rshell:
+cp main.py /pyboard/
+cp moist-detector.py /pyboard/
 ```
 
-Or using rshell:
+Alternative using ampy:
 ```bash
-rshell -p /dev/ttyUSB0
-> cp boot.py /pyboard/
-> cp main.py /pyboard/
+ampy --port /dev/ttyACM0 put main.py
+ampy --port /dev/ttyACM0 put moist-detector.py
 ```
 
 ### 3. Configure WiFi
@@ -59,23 +69,36 @@ WIFI_PASSWORD = 'Your_WiFi_Password'
 
 ### 4. Run the Code
 
-Connect to the ESP32 REPL:
+Using rshell:
 ```bash
-ampy --port /dev/ttyUSB0 run main.py
+rshell --port /dev/ttyACM0
+# Then inside rshell:
+repl
+# In the REPL, run:
+exec(open('main.py').read())
 ```
 
 Or reset the ESP32 - it will automatically run `main.py` on boot.
 
+The moisture monitor will start reading every 5 seconds and display output like:
+```
+[1234567890.123] Moisture: 2048
+[1234567895.123] Moisture: 1956
+```
+
 ## How It Works
 
 1. **WiFi Connection**: The ESP32 connects to the specified WiFi network
-2. **HTTP Request**: Sends a POST request to `https://ntfy.sh/dagonarian` with the message "Hi"
-3. **Status Reporting**: Prints connection status and notification results
+2. **Moisture Reading**: Reads analog value from moisture sensor on GPIO34 every 5 seconds
+3. **Data Logging**: Displays timestamp and moisture value for each reading
+4. **Optional Notifications**: Can send periodic notifications via ntfy.sh (commented out by default)
+5. **Continuous Monitoring**: Runs indefinitely without deep sleep for easy testing
 
 ## Code Structure
 
 - `boot.py`: Initialization code that runs on every boot
-- `main.py`: Main application code with WiFi connection and notification sending
+- `main.py`: Main application code with WiFi connection and continuous moisture monitoring
+- `moist-detector.py`: Moisture sensor reading functions
 - `requirements.txt`: Lists the built-in modules used (no external dependencies)
 
 ## Troubleshooting
@@ -85,25 +108,42 @@ Or reset the ESP32 - it will automatically run `main.py` on boot.
 - Ensure WiFi network is 2.4GHz (ESP32 doesn't support 5GHz)
 - Check signal strength
 
-### HTTP Request Issues
+### Moisture Sensor Issues
+- Check sensor is connected to GPIO34
+- Verify sensor power supply (3.3V)
+- Check for loose connections
+- Monitor serial output for sensor errors
+
+### HTTP Request Issues (if using notifications)
 - Verify internet connectivity
 - Check if ntfy.sh service is accessible
 - Monitor serial output for error messages
 
 ### Upload Issues
-- Ensure correct COM port
-- Check ESP32 is in bootloader mode if needed
+- Ensure correct COM port (check with `ls /dev/tty*`)
+- Check ESP32 is in bootloader mode if needed (hold BOOT, press RESET, release BOOT)
 - Verify MicroPython firmware is properly flashed
+- Use the esptool from the virtual environment: `./venv/bin/esptool.py`
+- Try different baud rates if connection fails (115200, 460800)
+
+### Flashing Issues
+- **"No such file or directory: stub_flasher_32.json"**: Use the esptool from the virtual environment instead of system esptool
+- **"Chip stopped responding"**: The firmware was partially flashed. Try flashing again or put ESP32 in bootloader mode
+- **Permission denied**: Run `sudo chmod 666 /dev/ttyACM0` or add your user to the dialout group
 
 ## Customization
 
 You can modify the code to:
-- Send different messages
+- Change monitoring interval (currently 5 seconds)
+- Adjust moisture sensor pin (currently GPIO34)
+- Enable/disable notifications
+- Add moisture level thresholds and alerts
+- Implement data logging to file
+- Add LED indicators for moisture status
+- Send different notification messages
 - Use different ntfy.sh topics
-- Add sensors and send sensor data
-- Implement scheduled notifications
-- Add LED indicators for status
 
 ## License
 
 This project is open source and available under the MIT License.
+
