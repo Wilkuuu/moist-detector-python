@@ -122,7 +122,11 @@ def main():
     if not connect_wifi():
         print('Cannot proceed without WiFi connection')
         return
-    
+    headers = {
+            'Content-Type': 'text/plain'
+        }
+    response = urequests.post(NTFY_URL, data='Start', headers=headers)
+
     print('Starting moisture monitoring...')
     print('Press Ctrl+C to stop')
     print('-' * 30)
