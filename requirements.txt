@@ -1,0 +1,11 @@
+# MicroPython ESP32 Requirements
+# These are built-in modules, no external installation needed
+
+# Core modules used:
+# - network: For WiFi connectivity
+# - urequests: For HTTP requests (built-in in MicroPython)
+# - time: For delays and timing
+# - machine: For hardware control
+
+# Note: MicroPython on ESP32 includes these modules by default
+# No pip install needed - just flash the firmware and upload the code
