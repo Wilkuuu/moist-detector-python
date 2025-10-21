@@ -4,6 +4,8 @@ import time
 import machine
 import sys
 import random
+import ntptime
+from machine import RTC, Pin, deepsleep
 sys.path.append('/pyboard')
 import moist_detector
 get_moisture = moist_detector.get_moisture
@@ -14,6 +16,11 @@ WIFI_PASSWORD = 'dagonarian186'
 
 # ntfy.sh endpoint
 NTFY_URL = 'https://ntfy.sh/dagonarian'
+
+# Timezone offset for Warsaw (CET/CEST)
+# CET = UTC+1, CEST = UTC+2
+# We'll use UTC+1 as default, but this should be adjusted for daylight saving time
+WARSAW_TIMEZONE_OFFSET = 1  # UTC+1 for CET (adjust to 2 for CEST)
 
 # Message lists for different moisture states
 need_water = [
@@ -61,6 +68,88 @@ all_fine = [
     "To była najlepsza woda ever! Dzięki!",
     "Kocham Cię Klaudia! (w kwiatowy sposób oczywiście!)"
 ]
+
+def sync_time():
+    """Synchronize time with NTP server"""
+    try:
+        print('Synchronizing time with NTP server...')
+        ntptime.settime()
+        print('Time synchronized successfully!')
+        return True
+    except Exception as e:
+        print(f'Failed to sync time: {e}')
+        return False
+
+def get_warsaw_time():
+    """Get current Warsaw time"""
+    try:
+        # Get UTC time
+        utc_time = time.time()
+        # Add Warsaw timezone offset
+        warsaw_time = utc_time + (WARSAW_TIMEZONE_OFFSET * 3600)
+        return warsaw_time
+    except Exception as e:
+        print(f'Error getting Warsaw time: {e}')
+        return None
+
+def is_check_time():
+    """Check if current time is 8:00 or 20:00 Warsaw time"""
+    try:
+        warsaw_time = get_warsaw_time()
+        if warsaw_time is None:
+            return False
+        
+        # Convert to local time tuple
+        local_time = time.localtime(warsaw_time)
+        hour = local_time[3]  # tm_hour
+        minute = local_time[4]  # tm_min
+        
+        # Check if it's 8:00 or 20:00 (with 5 minute tolerance)
+        return (hour == 8 and minute <= 5) or (hour == 20 and minute <= 5)
+    except Exception as e:
+        print(f'Error checking time: {e}')
+        return False
+
+def calculate_sleep_time():
+    """Calculate how long to sleep until next check time"""
+    try:
+        warsaw_time = get_warsaw_time()
+        if warsaw_time is None:
+            return 3600  # Default to 1 hour if time sync fails
+        
+        local_time = time.localtime(warsaw_time)
+        current_hour = local_time[3]
+        current_minute = local_time[4]
+        current_second = local_time[5]
+        
+        # Calculate seconds until next check time
+        if current_hour < 8:
+            # Next check is at 8:00
+            next_check_hour = 8
+            next_check_minute = 0
+        elif current_hour < 20:
+            # Next check is at 20:00
+            next_check_hour = 20
+            next_check_minute = 0
+        else:
+            # Next check is tomorrow at 8:00
+            next_check_hour = 8
+            next_check_minute = 0
+        
+        # Calculate seconds until next check
+        current_seconds = current_hour * 3600 + current_minute * 60 + current_second
+        next_check_seconds = next_check_hour * 3600 + next_check_minute * 60
+        
+        if next_check_seconds > current_seconds:
+            sleep_seconds = next_check_seconds - current_seconds
+        else:
+            # Next day
+            sleep_seconds = (24 * 3600) - current_seconds + next_check_seconds
+        
+        return sleep_seconds
+    except Exception as e:
+        print(f'Error calculating sleep time: {e}')
+        return 3600  # Default to 1 hour
 
 def connect_wifi():
     """Connect to WiFi network"""
@@ -113,83 +202,118 @@ def send_notification(message):
     except Exception as e:
         print(f'Error sending notification: {e}')
 
+def check_moisture():
+    """Check moisture level and send notification if needed"""
+    try:
+        print('Checking moisture level...')
+        
+        # Read moisture level
+        moisture_value = get_moisture()
+        
+        if moisture_value is not None:
+            # Create timestamp
+            warsaw_time = get_warsaw_time()
+            if warsaw_time:
+                local_time = time.localtime(warsaw_time)
+                timestamp_str = f"{local_time[0]}-{local_time[1]:02d}-{local_time[2]:02d} {local_time[3]:02d}:{local_time[4]:02d}:{local_time[5]:02d}"
+            else:
+                timestamp_str = str(time.time())
+            
+            status = "WET" if moisture_value == 1 else "DRY"
+            
+            print(f'[{timestamp_str}] Moisture: {status} (Digital: {moisture_value})')
+            
+            # Send notification based on status
+            if moisture_value == 0:  # DRY - need water
+                message = random.choice(need_water)
+                print("Plant needs water - sending notification")
+            else:  # WET - all fine
+                message = random.choice(all_fine)
+                print("Plant is well watered - sending notification")
+            
+            send_notification(message)
+            return True
+        else:
+            print('Failed to read moisture sensor')
+            return False
+            
+    except Exception as e:
+        print(f'Error checking moisture: {e}')
+        # Send error notification
+        error_message = f"❌ Moisture check error: {str(e)}"
+        send_notification(error_message)
+        return False
+
 def main():
-    """Main function - Continuous moisture monitoring every 5 seconds"""
-    print('ESP32 Moisture Monitor - 5 Second Intervals')
-    print('=' * 45)
+    """Main function - Scheduled moisture monitoring at 8:00 and 20:00 Warsaw time"""
+    print('ESP32 Moisture Monitor - Scheduled Checks (8:00 & 20:00 Warsaw)')
+    print('=' * 60)
     
     # Connect to WiFi
     if not connect_wifi():
         print('Cannot proceed without WiFi connection')
+        # Sleep for 1 hour and try again
+        print('Sleeping for 1 hour before retry...')
+        machine.deepsleep(3600000)  # 1 hour in milliseconds
         return
-    headers = {
-            'Content-Type': 'text/plain'
-        }
-    response = urequests.post(NTFY_URL, data='Start', headers=headers)
-
-    print('Starting moisture monitoring...')
-    print('Press Ctrl+C to stop')
-    print('-' * 30)
     
-    # Track previous status for change detection
-    previous_status = None
-    reading_count = 0
+    # Synchronize time
+    if not sync_time():
+        print('Failed to sync time, continuing with local time')
+    
+    # Send startup notification
+    try:
+        headers = {'Content-Type': 'text/plain'}
+        response = urequests.post(NTFY_URL, data='🌱 Moisture Monitor Started - Scheduled Checks at 8:00 & 20:00 Warsaw Time', headers=headers)
+        response.close()
+    except:
+        pass  # Don't fail if notification doesn't work
+    
+    print('Starting scheduled moisture monitoring...')
+    print('Checks will occur at 8:00 and 20:00 Warsaw time')
+    print('Device will deep sleep between checks')
+    print('-' * 50)
     
     try:
         while True:
-            # Read moisture level
-            moisture_value = get_moisture()
-            
-            if moisture_value is not None:
-                # Create timestamp
-                timestamp = time.time()
-                status = "WET" if moisture_value == 1 else "DRY"
-                reading_count += 1
+            # Check if it's time for a moisture check
+            if is_check_time():
+                print('It\'s check time! Performing moisture check...')
                 
-                print(f'[{timestamp}] Moisture: {status} (Digital: {moisture_value}) - Reading #{reading_count}')
+                # Perform moisture check
+                check_moisture()
                 
-                # Send notification on status change or every 10 readings
-                if previous_status != status or reading_count % 10 == 0:
-                    if previous_status != status:
-                        # Status changed - send random message based on new status
-                        if moisture_value == 0:  # WET - need water
-                            message = random.choice(all_fine)
-                            print(f"Status changed from {previous_status} to {status} - sending need water message")
-                        else:  # DRY - all fine
-                            message = random.choice(need_water)
-                            print(f"Status changed from {previous_status} to {status} - sending all fine message")
-                    else:
-                        # Periodic update - send random message based on current status
-                        if moisture_value == 0:  # WET - need water
-                            message = random.choice(all_fine)
-                            print(f"Periodic update - sending need water message")
-                        else:  # DRY - all fine
-                            message = random.choice(need_water)
-                            print(f"Periodic update - sending all fine message")
-                    
-                    send_notification(message)
+                # Calculate sleep time until next check
+                sleep_seconds = calculate_sleep_time()
+                print(f'Sleeping for {sleep_seconds} seconds until next check...')
                 
-                previous_status = status
+                # Deep sleep until next check time
+                machine.deepsleep(sleep_seconds * 1000)  # Convert to milliseconds
             else:
-                print('Failed to read moisture sensor')
-            
-            # Wait 5 seconds before next reading
-            time.sleep(5)
-            
+                # Not check time yet, sleep for 5 minutes and check again
+                print('Not check time yet, sleeping for 5 minutes...')
+                time.sleep(300)  # 5 minutes
+                
     except KeyboardInterrupt:
         print('\nMonitoring stopped by user')
         # Send final status notification
-        if previous_status is not None:
-            if previous_status == 'WET':
-                final_message = random.choice(all_fine)
-            else:
-                final_message = random.choice(need_water)
-            send_notification(final_message)
+        try:
+            headers = {'Content-Type': 'text/plain'}
+            response = urequests.post(NTFY_URL, data='🌱 Moisture Monitor Stopped', headers=headers)
+            response.close()
+        except:
+            pass
     except Exception as e:
         print(f'Error in main loop: {e}')
         # Send error notification
-        error_message = f"❌ Moisture monitor error: {str(e)}"
-        send_notification(error_message)
+        try:
+            error_message = f"❌ Moisture monitor error: {str(e)}"
+            send_notification(error_message)
+        except:
+            pass
+        # Sleep for 1 hour before retry
+        print('Sleeping for 1 hour before retry...')
+        machine.deepsleep(3600000)  # 1 hour in milliseconds
     
     print('Moisture monitoring ended')
 
