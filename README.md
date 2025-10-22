@@ -50,13 +50,13 @@ Using rshell (recommended):
 rshell --port /dev/ttyACM0
 # Then inside rshell:
 cp main.py /pyboard/
-cp moist-detector.py /pyboard/
+cp moist_detector.py /pyboard/
 ```
 
 Alternative using ampy:
 ```bash
 ampy --port /dev/ttyACM0 put main.py
-ampy --port /dev/ttyACM0 put moist-detector.py
+ampy --port /dev/ttyACM0 put moist_detector.py
 ```
 
 ### 3. Configure WiFi

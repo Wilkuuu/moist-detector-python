@@ -19,7 +19,8 @@ def get_moisture():
         for _ in range(5):
             readings.append(adc.read())
             time.sleep_ms(100)
-
+        return readings[0]
+        # todo if detector will have different value not lik 0 or 1
         # Get average reading
         avg_reading = sum(readings) // len(readings)
         

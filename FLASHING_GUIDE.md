@@ -31,7 +31,7 @@ source venv/bin/activate
 
 rshell --port /dev/ttyACM0
 cp main.py /pyboard/
-cp moist-detector.py /pyboard/
+cp moist_detector.py /pyboard/
 ```
 
 Then in rshell:
