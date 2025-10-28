@@ -16,6 +16,7 @@ WIFI_PASSWORD = 'dagonarian186'
 
 # ntfy.sh endpoint
 NTFY_URL = 'https://ntfy.sh/dagonarian'
+# NTFY_URL = 'https://ntfy.sh/testmoist'
 
 # Timezone offset for Warsaw (CET/CEST)
 # CET = UTC+1, CEST = UTC+2
@@ -46,6 +47,19 @@ need_water = [
     "Halo? 112? Potrzebuje pilnie wody! Aha, to Ty Klaudia? IDEALNIE!"
 ]
 
+very_wet = [
+    "Jestem bardzo wilgotny! Dziekuje za doskonała opieke!",
+    "Woda? Mam jej pod dostatkiem! Jestem szczesliwy!",
+    "Czuje sie swietnie, jestem bardzo dobrze nawodniony!",
+    "Klaudia, jestes mistrzynia nawadniania!",
+    "Moje korzenie sa zachwycone! Dziekuje!",
+    "Wilgotnosc idealna! Jestem wniebowziety!",
+    "To byl mistrzowski podlewanie! Dziekuje!",
+    "Czuje sie jak w raju wodnym!",
+    "Klaudia, moja wilgotnosciowa bohaterko!",
+    "Moglibysmy cale lata bez dodatkowej wody!"
+]
+
 all_fine = [
     "Dziekuje! Jestes moja bohaterka!",
     "Pamietalas o mnie! Cudownie!",
@@ -67,6 +81,19 @@ all_fine = [
     "Ahhh, ulgaaa! Bardzo Ci dziekuje!",
     "To byla najlepsza woda ever! Dzieki!",
     "Kocham Cie Klaudia! (w kwiatowy sposob oczywiscie!)"
+]
+
+getting_dry = [
+    "Powoli sie susze... moze troche wody?",
+    "Czuje sie coraz bardziej suchy...",
+    "Klaudia, pomału przydalaby mi sie woda!",
+    "Wilgotnosc spada... obserwuj mnie prosze!",
+    "Zaczynam zauwazac deficyt wody...",
+    "Moje liscie mowia: 'woda bylaby fajna'",
+    "Jestem w porzadku, ale woda bylaby mile widziana!",
+    "Coraz bardziej sucho... ale jeszcze jest ok!",
+    "Klaudia, nie rozpaczaj, ale pamiętaj o mnie!",
+    "Wilgotnosc maleje, ale trzymam sie!"
 ]
 
 def sync_time():
@@ -181,7 +208,7 @@ def connect_wifi():
         print('Network config:', wlan.ifconfig())
         return True
 
-def send_notification(message):
+def send_notification(message, moisture_level=None):
     """Send notification to ntfy.sh"""
     try:
         print(f'Sending notification: {message}')
@@ -190,6 +217,24 @@ def send_notification(message):
         headers = {
             'Content-Type': 'text/plain'
         }
+        
+        # Add enhanced headers based on moisture level
+        if moisture_level == 3:  # Very Dry - urgent
+            headers["Title"] = "Dzbanek!"
+            headers["Priority"] = "urgent"
+            headers["Tags"] = "warning,skull"
+        elif moisture_level == 2:  # Dry - warning
+            headers["Title"] = "Roślina się suszy"
+            headers["Priority"] = "default"
+            headers["Tags"] = "droplet"
+        elif moisture_level == 1:  # Wet - all good
+            headers["Title"] = "Wszystko OK"
+            headers["Priority"] = "default"
+            headers["Tags"] = "white_check_mark"
+        elif moisture_level == 0:  # Very Wet - excellent
+            headers["Title"] = "Doskonale!"
+            headers["Priority"] = "default"
+            headers["Tags"] = "white_check_mark,heart"
 
         # Send POST request to ntfy.sh
         response = urequests.post(NTFY_URL, data=message, headers=headers)
@@ -209,10 +254,10 @@ def check_moisture():
     try:
         print('Checking moisture level...')
 
-        # Read moisture level
-        moisture_value = get_moisture()
-        print(f'Moisture level: {moisture_value}')
-        if moisture_value is not None:
+        # Read moisture level (0-3: Very Wet, Wet, Dry, Very Dry)
+        moisture_level = get_moisture()
+        print(f'Moisture level: {moisture_level}')
+        if moisture_level is not None:
             # Create timestamp
             warsaw_time = get_warsaw_time()
             if warsaw_time:
@@ -221,19 +266,35 @@ def check_moisture():
             else:
                 timestamp_str = str(time.time())
 
-            status = "WET" if moisture_value == 0 else "DRY"
+            # Map moisture level to status string
+            status_map = {
+                0: "Very Wet",
+                1: "Wet", 
+                2: "Dry",
+                3: "Very Dry"
+            }
+            status = status_map.get(moisture_level, "Unknown")
 
-            print(f'[{timestamp_str}] Moisture: {status} (Digital: {moisture_value})')
+            print(f'[{timestamp_str}] Moisture: {status} (Level: {moisture_level})')
 
-            # Send notification based on status
-            if moisture_value == 0:  # WET - all fine
+            # Send notification based on moisture level
+            if moisture_level == 0:  # Very Wet - all fine
+                message = random.choice(very_wet)
+                print("Plant is very well watered - sending notification")
+                send_notification(message, moisture_level=0)
+            elif moisture_level == 1:  # Wet - all fine
                 message = random.choice(all_fine)
                 print("Plant is well watered - sending notification")
-            else:  # DRY - need water
+                send_notification(message, moisture_level=1)
+            elif moisture_level == 2:  # Dry - getting thirsty
+                message = random.choice(getting_dry)
+                print("Plant is getting dry - sending notification")
+                send_notification(message, moisture_level=2)
+            else:  # Very Dry - urgent
                 message = random.choice(need_water)
-                print("Plant needs water - sending notification")
+                print("Plant urgently needs water - sending notification")
+                send_notification(message, moisture_level=3)
 
-            send_notification(message)
             return True
         else:
             print('Failed to read moisture sensor')
@@ -264,12 +325,12 @@ def main():
         print('Failed to sync time, continuing with local time')
 
     # Send startup notification
-    try:
-        headers = {'Content-Type': 'text/plain'}
-        response = urequests.post(NTFY_URL, data='🌱 Moisture Monitor Started - Scheduled Checks at 8:00 & 20:00 Warsaw Time', headers=headers)
-        response.close()
-    except:
-        pass  # Don't fail if notification doesn't work
+    # try:
+    #     headers = {'Content-Type': 'text/plain'}
+    #     response = urequests.post(NTFY_URL, data='🌱 Moisture Monitor Started - Scheduled Checks at 8:00 & 20:00 Warsaw Time', headers=headers)
+    #     response.close()
+    # except:
+    #     pass  # Don't fail if notification doesn't work
 
     print('Starting scheduled moisture monitoring...')
     print('Checks will occur at 8:00 and 20:00 Warsaw time')
