@@ -10,10 +10,6 @@ sys.path.append('/pyboard')
 import moist_detector
 get_moisture = moist_detector.get_moisture
 
-# File to store last notification date and hour
-# Format: "YYYY-MM-DD-HH" (e.g., "2025-11-01-08" for Nov 1 at 8:00)
-LAST_NOTIFICATION_FILE = 'last_notif.txt'
-
 # WiFi credentials
 WIFI_SSID = 'Orange_Swiatlowod_5070'
 WIFI_PASSWORD = 'dagonarian186'
@@ -136,7 +132,7 @@ def is_check_time():
         hour = local_time[3]  # tm_hour
         minute = local_time[4]  # tm_min
         print(f'hour: {hour}:{minute}')
-        
+        return True
         # Check if it's 8:00 or 20:00 (with 5 minute tolerance)
         return (hour == 8 and minute <= 5) or (hour == 20 and minute <= 5)
     except Exception as e:
@@ -211,39 +207,6 @@ def connect_wifi():
         print('Already connected to WiFi')
         print('Network config:', wlan.ifconfig())
         return True
-
-def should_send_notification():
-    """Check if we should send notification (prevent duplicates for same check period)"""
-    try:
-        warsaw_time = get_warsaw_time()
-        if warsaw_time is None:
-            return True  # If no time, allow notification
-        
-        local_time = time.localtime(warsaw_time)
-        current_key = "{}-{:02d}-{:02d}-{:02d}".format(
-            local_time[0], local_time[1], local_time[2], local_time[3]
-        )
-        
-        # Check last notification
-        try:
-            with open(LAST_NOTIFICATION_FILE, 'r') as f:
-                last_key = f.read().strip()
-                if last_key == current_key:
-                    return False
-        except:
-            pass  # File doesn't exist, allow notification
-        
-        # Save current check period
-        try:
-            with open(LAST_NOTIFICATION_FILE, 'w') as f:
-                f.write(current_key)
-        except:
-            pass  # If we can't save, still allow notification
-        
-        return True
-    except Exception as e:
-        print(f'Error checking notification: {e}')
-        return True  # On error, allow notification
 
 def send_notification(message, moisture_level=None):
     """Send notification to ntfy.sh"""
