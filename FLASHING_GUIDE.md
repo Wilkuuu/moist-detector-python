@@ -21,7 +21,7 @@ sudo chmod 666 /dev/ttyACM0
 ```bash
 cd /home/wilk/Desktop/Projects/moist-detector-python
 source venv/bin/activate
-./venv/bin/esptool.py --chip esp32 --port /dev/ttyACM0 --baud 460800 write-flash -z 0x1000 esp32-firmware.bin
+./venv/bin/esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 460800 write-flash -z 0x1000 esp32-firmware.bin
 ```
 
 **Note**: The `write-flash` command (with hyphen) is the modern syntax. The old `write_flash` (with underscore) is deprecated.
@@ -29,7 +29,7 @@ source venv/bin/activate
 ### Step 3: Upload Code Files
 ```bash
 
-rshell --port /dev/ttyACM0
+rshell --port /dev/ttyUSB0
 cp main.py /pyboard/
 cp moist_detector.py /pyboard/
 ```

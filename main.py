@@ -297,7 +297,10 @@ def check_moisture():
 
             return True
         else:
-            print('Failed to read moisture sensor')
+            print('Failed to read moisture sensor - sensor may be disconnected')
+            # Send notification about sensor disconnection
+            error_message = "⚠️ Czujnik wilgotności nie jest podłączony lub nie działa poprawnie!"
+            send_notification(error_message)
             return False
 
     except Exception as e:

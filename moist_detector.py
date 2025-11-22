@@ -1,8 +1,8 @@
 from machine import Pin
 import time
 
-# Configuration - Using recommended GPIO 36 (ADC0) from ESP32IO tutorial
-MOISTURE_PIN = 36  # GPIO36 (ADC0) for moisture sensor
+# Configuration - Using GPIO 0 (ADC0) for moisture sensor
+MOISTURE_PIN = 35  # GPIO0 (ADC0) for moisture sensor
 
 
 def get_moisture():
@@ -29,6 +29,30 @@ def get_moisture():
         
         # Get average reading
         avg_reading = sum(readings) // len(readings)
+        
+        # Check for disconnected sensor
+        # Disconnected sensors typically read:
+        # - 0 or very low (< 50) - floating low
+        # - Maximum (4095) - floating high
+        # - Very unstable readings (high variance)
+        min_reading = min(readings)
+        max_reading = max(readings)
+        reading_range = max_reading - min_reading
+        
+        # Disconnected sensor detection
+        DISCONNECTED_LOW_THRESHOLD = 50   # Readings < 50 likely disconnected
+        DISCONNECTED_HIGH_THRESHOLD = 4045  # Readings > 4045 likely disconnected (near max 4095)
+        DISCONNECTED_VARIANCE_THRESHOLD = 3000  # If readings vary by > 3000, likely unstable/disconnected
+        
+        if avg_reading < DISCONNECTED_LOW_THRESHOLD:
+            print(f'Sensor appears disconnected - reading too low: {avg_reading} (readings: {readings})')
+            return None
+        elif avg_reading > DISCONNECTED_HIGH_THRESHOLD:
+            print(f'Sensor appears disconnected - reading at maximum: {avg_reading} (readings: {readings})')
+            return None
+        elif reading_range > DISCONNECTED_VARIANCE_THRESHOLD:
+            print(f'Sensor appears disconnected - readings too unstable: range={reading_range} (readings: {readings})')
+            return None
         
         # Per ESP32IO tutorial: Higher value = DRY soil, Lower value = WET soil
         # Defining thresholds for 4 levels based on typical readings
@@ -62,7 +86,7 @@ def get_moisture():
 # Test mode - only runs if executed directly
 if __name__ == '__main__':
     print('Moisture Detector Test Mode')
-    print('Reading from GPIO36 (ADC0)...')
+    print('Reading from GPIO0 (ADC0)...')
     print('-' * 30)
 
     while True:
